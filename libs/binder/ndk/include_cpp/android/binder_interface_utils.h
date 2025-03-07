@@ -30,16 +30,14 @@
 #include <android/binder_auto_utils.h>
 #include <android/binder_ibinder.h>
 
-#if defined(__ANDROID_VENDOR__)
-#include <android/llndk-versioning.h>
-#elif !defined(API_LEVEL_AT_LEAST)
 #if defined(__BIONIC__)
-#define API_LEVEL_AT_LEAST(sdk_api_level, vendor_api_level) \
-    (__builtin_available(android sdk_api_level, *))
+#define API_LEVEL_AT_LEAST(sdk_api_level) __builtin_available(android sdk_api_level, *)
+#elif defined(TRUSTY_USERSPACE)
+// TODO(b/349936395): set to true for Trusty
+#define API_LEVEL_AT_LEAST(sdk_api_level) (false)
 #else
-#define API_LEVEL_AT_LEAST(sdk_api_level, vendor_api_level) (true)
+#define API_LEVEL_AT_LEAST(sdk_api_level) (true)
 #endif  // __BIONIC__
-#endif  // __ANDROID_VENDOR__
 
 #if __has_include(<android/binder_shell.h>)
 #include <android/binder_shell.h>
@@ -178,6 +176,9 @@ class ICInterface : public SharedRefBase {
                                               AIBinder_Class_onTransact onTransact,
                                               const char** codeToFunction, size_t functionCount);
 
+    static inline AIBinder_Class* defineClass(const char* interfaceDescriptor,
+                                              AIBinder_Class_onTransact onTransact);
+
    private:
     class ICInterfaceData {
        public:
@@ -267,6 +268,12 @@ std::shared_ptr<ICInterface> ICInterface::asInterface(AIBinder* binder) {
 }
 
 AIBinder_Class* ICInterface::defineClass(const char* interfaceDescriptor,
+                                         AIBinder_Class_onTransact onTransact) {
+
+    return defineClass(interfaceDescriptor, onTransact, nullptr, 0);
+}
+
+AIBinder_Class* ICInterface::defineClass(const char* interfaceDescriptor,
                                          AIBinder_Class_onTransact onTransact,
                                          const char** codeToFunction, size_t functionCount) {
     AIBinder_Class* clazz = AIBinder_Class_define(interfaceDescriptor, ICInterfaceData::onCreate,
@@ -289,8 +296,11 @@ AIBinder_Class* ICInterface::defineClass(const char* interfaceDescriptor,
 #endif
 
 #if defined(__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__) || __ANDROID_API__ >= 36
-    if API_LEVEL_AT_LEAST (36, 202504) {
-        AIBinder_Class_setTransactionCodeToFunctionNameMap(clazz, codeToFunction, functionCount);
+    if (API_LEVEL_AT_LEAST(36)) {
+        if (codeToFunction != nullptr) {
+            AIBinder_Class_setTransactionCodeToFunctionNameMap(clazz, codeToFunction,
+                                                               functionCount);
+        }
     }
 #else
     (void)codeToFunction;
